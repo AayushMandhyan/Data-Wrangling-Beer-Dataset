@@ -1,0 +1,741 @@
+---
+title: "Data Wrangling and Husbandry Final Project Report"
+date: "29th April 2020"
+output:
+  html_document: 
+    theme: journal
+    highlight: espresso
+  pdf_document: 
+    theme: journal
+    highlight: espresso
+---
+
+# Data Wrangling and Husbandry (Stat 597)
+
+# Final Project Report
+
+**By: Aayush Mandhyan (am2447)**
+
+## Abstract
+To explore and mine hidden patterns within beer datasets (brewery, beer, beer review) and
+answer questions which come into mind when one thinks about a variety of beers.
+
+
+## Introduction
+Covid-19 The first dataset which comes into one’s mind in today’s time, is very important
+but we are already looking at its analysis on the news like 10 times a day. Which made me
+think in the opposite direction and seek datasets which can be challenging as well as fun at
+the same time to display my skills gained in R.
+
+It reminded me of last year’s spring break, me and my friends took a road trip South.
+Towards Virginia, North Carolina to enjoy the best nature had to offer i.e. “The Smoky
+Mountains”. And taste different varieties of beer we could come across. During this trip we
+would stop to seek out famous local breweries and try different varieties of beer they had
+to offer. The process would always be to seek out breweries, in the area we were in, via the
+internet or through recommendation by locals; and learn about their types of beers, ratings
+and so on before visiting the place out. Now thinking back to those times I wanted to take a
+data Scientist approach to the same questions and seek answers using the below data
+sources.
+
+
+## Data Source
+- https://www.kaggle.com/nickhould/craft-cans#beers.csv (beers, breweries)
+- https://data.world/socialmediadata/beeradvocate (beer_ratings)
+
+
+### Data Preprocessing 
+
+**Loading the required packages**
+```{r, echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+library(tidyverse)
+library(lubridate)
+library(magrittr)
+library(tibble)
+library(stringr)
+library(knitr)
+library(broom)
+library(choroplethr)
+library(choroplethrMaps)
+```
+
+
+**Loading the dataset**
+```{r}
+reviews <- read.csv("D:/Classes/Spring 2020/Stat597/Final Project/dataset/beer_reviews.csv")
+beers <- read.csv("D:/Classes/Spring 2020/Stat597/Final Project/dataset/beers.csv")
+breweries <- read.csv("D:/Classes/Spring 2020/Stat597/Final Project/dataset/breweries.csv")
+```
+
+
+Let's take a look at the column information of the dataset:
+
+**Beer dataset**
+
+- abv: The alcoholic content by volume with 0 being no alcohol and 1 being pure alcohol
+- ibu: International bittering units, which describe how bitter a drink is
+- name: The name of the beer
+- style: Beer style (lager, ale, IPA, etc.)
+- brewery_id: Unique identifier for brewery that produces this beer
+- ounces: Size of beer in ounces
+
+
+**Breweries dataset**
+
+- brewery_id: Unique identifier for brewery that produces this beer
+- name: Name of the brewery
+- city: City that the brewery is located in
+- state: State that the brewery is located in
+
+
+**Review dataset**
+
+- brewery_id: Unique identifier for brewery that produces this beer	
+- brewery_name: Name of the brewery	
+- review_time: Timestamp of the review	
+- review_overall: Aggregated review score	
+- review_aroma: Score for beer aroma
+- review_appearance: Score for beer appearance	
+- review_profilename: Reviewer Profile Name	
+- beer_style: Beer style (lager, ale, IPA, etc.)	
+- review_palate	Score for beer palate
+- review_taste: Score for beer taste	
+- beer_name: The name of the beer
+- beer_abv: The alcoholic content by volume with 0 being no alcohol and 1 being pure alcohol	
+- beer_beerid: Unique identifier for the beer
+
+
+
+First 2 dataset are from a single source and have same brewery_id, where as review dataset 
+is sources from a different source hence has a different id for brewries. 
+We need a normalized dataset consisting of all the meta data for every beer type available,
+for further exploratory data analysis.
+
+
+
+
+**Normalizing the dataset**
+
+To create a Normalized data set, first we take beer and brewery dataset into consideration as they
+come from a single source and have same id representation of breweries. So we inner join the first 
+two dataset on brewery_id, as shown below:
+
+```{r}
+beers_breweries <- beers %>% select(-X, -id) %>% inner_join(breweries, by = c('brewery_id' = 'X'))
+beers_breweries <- beers_breweries %>% rename(beer = name.x, brewery = name.y)
+head(beers_breweries)
+```
+
+After the first two datasets have been merged we have to encorporate review dataset. This review dataset
+has a different source, thus it has different id representation for breweries. So in this case we can not
+use brewery_id to join these two datasets. But on looking closer at the data, we see that the brewery name
+remains the same which we can leverage to merge these two datasets. That's what we do in the next step.
+
+```{r}
+beer_df <- reviews %>% inner_join(beers_breweries, by = c('beer_name' = 'beer'))
+head(beer_df)
+```
+
+We can observe that in the resulting dataset above consists of duplicate and non-essential features.
+So, next step is to keep the ones which are relevant to the premise of our analysis.
+
+Thus, we only keep the following columns:
+
+- beer_name: The name of the beer
+- style: Beer style (lager, ale, IPA, etc.)
+- abv: The alcoholic content by volume with 0 being no alcohol and 1 being pure alcohol
+- ounces: Size of beer in ounces
+- brewery_name: Name of the brewery	
+- city: City that the brewery is located in
+- state: State that the brewery is located in
+- review_overall: Aggregated review score	
+- review_appearance: Score for beer appearance
+- review_taste: Score for beer taste
+- review_aroma: Score for beer aroma
+- review_palate	Score for beer palate
+
+```{r}
+beer_df <- beer_df %>% select(beer_name, style, abv, ounces, brewery_name, city, state, review_overall, review_appearance, review_taste, review_aroma, review_palate)
+head(beer_df)
+```
+
+We, now have our final dataset ready to be cleaned.
+
+
+
+
+**Cleaning the dataset**
+
+Before we start analyzing our dataset, we need to make sure that the data set is void 
+of any impurity i.e. NaN values.
+
+```{r}
+map_df(beer_df, ~ sum(is.na(.)))
+nrow(beer_df)
+beer_df <- beer_df %>% drop_na()
+```
+
+We observe that out of 98947 rows we have NaN's in 377 rows of abv column only. This we can clean up
+by just removing these rows without having a significant impact on our dataset.
+
+
+
+
+### Exploratory Data Analysis
+
+Till, now we worked on merging our dataset, cleaning it for the purpose of analyzing it and finding 
+actionable and valuable insights out of it. In this section we will be doing just that, and will try 
+to answer some of the pertaining question which pop into ones mind when the think about beer.
+
+
+**Review Summary**
+
+First off let us take a look at various statistics of the review scores. These gives us insights into
+the distribution of scores for each criteria for a beer such:
+
+- Appearance: How does the beer look, its color, its thickness, etc> This characteristics is the first 
+              thing a person observes about a beer.
+- Aroma: The aroma of the beer. After appearance people smell the beer once they have openned the bottle.
+         If its aroma is bad no one will consume it.
+- Taste: Its the most important thing about a beer. Once people have gotten over the first two characteristics 
+         of the beer they want to taste it.
+- Palate: This characteristic includes taste, aroma and over all texture of a beer. Which defines it in overall sense.
+- Overall: Average score of the above individual characteristics.
+
+```{r}
+cat('Appearance Score:\n')
+summary(beer_df$review_appearance)
+
+cat('\nTaste Score: \n')
+summary(beer_df$review_taste)
+
+cat('\nAroma Score: \n')
+summary(beer_df$review_aroma)
+
+cat('\nPalate Score: \n')
+summary(beer_df$review_palate)
+
+cat('\nOverall Score: \n')
+summary(beer_df$review_overall)
+```
+
+We observe that average ratings of our beers are quite high in all cateorgies, with a mean value between 3.67 - 3.85.
+Which is safe to say that the beers in our data set are quite good.
+
+
+
+
+**Find top 10 beer based on appearance score**
+
+Lets take a look at top 10 beers based on their appearance, also find the brewery which produces them and the brewery's location:
+
+```{r}
+top_10_beers <- beer_df %>% group_by(beer_name) %>% summarise(avg=mean(review_appearance)) %>% arrange(desc(avg)) %>% head(10)
+
+df_appearance <- data.frame(Beer = character(), Score = numeric(), Brewery_Name = character(), City = character(), State = character())
+for (beer in top_10_beers$beer_name)
+{
+  brewery <- beer_df %>% filter(beer_name == beer) %>% head(1)
+  score <- top_10_beers %>% filter(beer_name == beer) %>% head(1)
+  df_appearance <- df_appearance %>% add_row(Beer = beer, Score = score$avg, Brewery_Name = brewery$brewery_name, City = brewery$city, State = brewery$state)
+}
+df_appearance
+```
+
+
+
+
+**Find top 10 beer based on aroma score**
+
+Lets take a look at top 10 beers based on their aroma, also find the brewery which produces them and the brewery's location:
+
+```{r}
+top_10_beers <- beer_df %>% group_by(beer_name) %>% summarise(avg=mean(review_aroma)) %>% arrange(desc(avg)) %>% head(10)
+
+df_aroma <- data.frame(Beer = character(), Score = numeric(), Brewery_Name = character(), City = character(), State = character())
+for (beer in top_10_beers$beer_name)
+{
+  brewery <- beer_df %>% filter(beer_name == beer) %>% head(1)
+  score <- top_10_beers %>% filter(beer_name == beer) %>% head(1)
+  df_aroma <- df_aroma %>% add_row(Beer = beer, Score = score$avg, Brewery_Name = brewery$brewery_name, City = brewery$city, State = brewery$state)
+}
+df_aroma
+```
+
+
+
+
+**Find top 10 beer based on taste score**
+
+Lets take a look at top 10 beers based on their taste, also find the brewery which produces them and the brewery's location:
+
+```{r}
+top_10_beers <- beer_df %>% group_by(beer_name) %>% summarise(avg=mean(review_taste)) %>% arrange(desc(avg)) %>% head(10)
+
+df_taste <- data.frame(Beer = character(), Score = numeric(), Brewery_Name = character(), City = character(), State = character())
+for (beer in top_10_beers$beer_name)
+{
+  brewery <- beer_df %>% filter(beer_name == beer) %>% head(1)
+  score <- top_10_beers %>% filter(beer_name == beer) %>% head(1)
+  df_taste <- df_taste %>% add_row(Beer = beer, Score = score$avg, Brewery_Name = brewery$brewery_name, City = brewery$city, State = brewery$state)
+}
+df_taste
+```
+
+
+
+
+**Find top 10 beer based on palate score**
+
+Lets take a look at top 10 beers based on their palate, also find the brewery which produces them and the brewery's location:
+
+```{r}
+top_10_beers <- beer_df %>% group_by(beer_name) %>% summarise(avg=mean(review_palate)) %>% arrange(desc(avg)) %>% head(10)
+
+df_palate <- data.frame(Beer = character(), Score = numeric(), Brewery_Name = character(), City = character(), State = character())
+for (beer in top_10_beers$beer_name)
+{
+  brewery <- beer_df %>% filter(beer_name == beer) %>% head(1)
+  score <- top_10_beers %>% filter(beer_name == beer) %>% head(1)
+  df_palate <- df_palate %>% add_row(Beer = beer, Score = score$avg, Brewery_Name = brewery$brewery_name, City = brewery$city, State = brewery$state)
+}
+df_palate
+```
+
+
+
+
+**Find top 10 beer based on overall score**
+
+Lets take a look at top 10 beers based on their overall score, also find the brewery which produces them and the brewery's location:
+
+```{r}
+top_10_beers <- beer_df %>% group_by(beer_name) %>% summarise(avg=mean(review_overall)) %>% arrange(desc(avg)) %>% head(10)
+
+df_overall <- data.frame(Beer = character(), Score = numeric(), Brewery_Name = character(), City = character(), State = character())
+for (beer in top_10_beers$beer_name)
+{
+  brewery <- beer_df %>% filter(beer_name == beer) %>% head(1)
+  score <- top_10_beers %>% filter(beer_name == beer) %>% head(1)
+  df_overall <- df_overall %>% add_row(Beer = beer, Score = score$avg, Brewery_Name = brewery$brewery_name, City = brewery$city, State = brewery$state)
+}
+df_overall
+```
+
+
+Now we see top 10 beers based on various characteristics. Let's see if there is any beer which has occurrence in all of them.
+
+```{r}
+df_intersect <- intersect(df_appearance$Beer, df_aroma$Beer) %>% intersect(df_taste$Beer) %>% intersect(df_palate$Beer) %>% intersect(df_overall$Beer)
+df_intersect
+```
+We observe that none of the beer belong to all 5 top categories. While some of them overlap in most. 
+Example "Bridal Veil Rye Pale Ale" is found in taste, palate and overall top beers.
+
+
+
+We have seen beers which rank the highest in these categories, but that about the places which brew them.
+Do any brewery has a higher score for a particular characteristics. Lets take a look at that.
+
+
+
+
+**Find top 10 breweries based on their beer appearance score**
+
+Lets take a look at top 10 breweries based on their beer appearance score, also find thier location:
+
+```{r}
+top_10 <- beer_df %>% group_by(brewery_name) %>% summarise(avg=mean(review_appearance)) %>% arrange(desc(avg)) %>% head(10)
+
+df_appearance <- data.frame(Brewery_Name = character(), Score = numeric(), City = character(), State = character())
+for (b in top_10$brewery_name)
+{
+  brewery <- beer_df %>% filter(brewery_name == b) %>% head(1)
+  score <- top_10 %>% filter(brewery_name == b) %>% head(1)
+  df_appearance <- df_appearance %>% add_row(Brewery_Name = brewery$brewery_name, Score = score$avg, City = brewery$city, State = brewery$state)
+}
+df_appearance
+```
+
+
+
+
+**Find top 10 breweries based on their beer aroma score**
+
+Lets take a look at top 10 breweries based on their beer aroma score, also find thier location:
+
+```{r}
+top_10 <- beer_df %>% group_by(brewery_name) %>% summarise(avg=mean(review_aroma)) %>% arrange(desc(avg)) %>% head(10)
+
+df_aroma <- data.frame(Brewery_Name = character(), Score = numeric(), City = character(), State = character())
+for (b in top_10$brewery_name)
+{
+  brewery <- beer_df %>% filter(brewery_name == b) %>% head(1)
+  score <- top_10 %>% filter(brewery_name == b) %>% head(1)
+  df_aroma <- df_appearance %>% add_row(Brewery_Name = brewery$brewery_name, Score = score$avg, City = brewery$city, State = brewery$state)
+}
+df_aroma
+```
+
+
+
+
+**Find top 10 breweries based on their beer taste score**
+
+Lets take a look at top 10 breweries based on their beer taste also find thier location:
+
+```{r}
+top_10 <- beer_df %>% group_by(brewery_name) %>% summarise(avg=mean(review_taste)) %>% arrange(desc(avg)) %>% head(10)
+
+df_taste <- data.frame(Brewery_Name = character(), Score = numeric(), City = character(), State = character())
+for (b in top_10$brewery_name)
+{
+  brewery <- beer_df %>% filter(brewery_name == b) %>% head(1)
+  score <- top_10 %>% filter(brewery_name == b) %>% head(1)
+  df_taste <- df_appearance %>% add_row(Brewery_Name = brewery$brewery_name, Score = score$avg, City = brewery$city, State = brewery$state)
+}
+df_taste
+```
+
+
+
+
+**Find top 10 breweries based on their beer palate score**
+
+Lets take a look at top 10 breweries based on their beer palate score, also find thier location:
+
+```{r}
+top_10 <- beer_df %>% group_by(brewery_name) %>% summarise(avg=mean(review_palate)) %>% arrange(desc(avg)) %>% head(10)
+
+df_palate <- data.frame(Brewery_Name = character(), Score = numeric(), City = character(), State = character())
+for (b in top_10$brewery_name)
+{
+  brewery <- beer_df %>% filter(brewery_name == b) %>% head(1)
+  score <- top_10 %>% filter(brewery_name == b) %>% head(1)
+  df_palate <- df_appearance %>% add_row(Brewery_Name = brewery$brewery_name, Score = score$avg, City = brewery$city, State = brewery$state)
+}
+df_palate
+```
+
+
+
+
+**Find top 10 breweries based on their beer overall score**
+
+Lets take a look at top 10 breweries based on their beer overall score, also find thier location:
+
+```{r}
+top_10 <- beer_df %>% group_by(brewery_name) %>% summarise(avg=mean(review_overall)) %>% arrange(desc(avg)) %>% head(10)
+
+df_overall <- data.frame(Brewery_Name = character(), Score = numeric(), City = character(), State = character())
+for (b in top_10$brewery_name)
+{
+  brewery <- beer_df %>% filter(brewery_name == b) %>% head(1)
+  score <- top_10 %>% filter(brewery_name == b) %>% head(1)
+  df_overall <- df_appearance %>% add_row(Brewery_Name = brewery$brewery_name, Score = score$avg, City = brewery$city, State = brewery$state)
+}
+df_overall
+```
+
+
+Now we see top 10 beers based on various characteristics. Let's see if there is any brewery which has occurrence in all of them.
+
+```{r}
+df_intersect <- intersect(df_appearance$Beer, df_aroma$Beer) %>% intersect(df_taste$Beer) %>% intersect(df_palate$Beer) %>% intersect(df_overall$Beer)
+df_intersect
+```
+We observe that none of the brewery belong to all 5 top categories. 
+
+
+
+
+Next, lets take a look at various beer styles based on review scores. This will give us more insight into
+which style is better at which characteristics.
+
+**Top beer styles based on appearance score**
+
+Let's take a look at the top styles based on their apprearance score.  
+
+```{r}
+beer_df %>% 
+  group_by(style) %>% # Group by the beer style
+  summarise(avg=mean(review_appearance)) %>% # Count per group
+  filter(avg > 4) %>% # Only the larger groups
+  ggplot(aes(reorder(style, avg), avg)) + # Reorder the bars
+  geom_col(fill = '#B6CDE5') + 
+  theme_minimal() + 
+  coord_flip() +
+  ylab('Average Appearance Score') +
+  xlab('Styles') +
+  ggtitle('Popular Beer Styles based on Appearance Score')
+```
+
+
+
+
+**Top beer styles based on aroma score**
+
+Let's take a look at the top styles based on their aroma score.  
+
+```{r}
+beer_df %>% 
+  group_by(style) %>% # Group by the beer style
+  summarise(avg=mean(review_aroma)) %>% # Count per group
+  filter(avg > 4) %>% # Only the larger groups
+  ggplot(aes(reorder(style, avg), avg)) + # Reorder the bars
+  geom_col(fill = '#B6CDE5') + 
+  theme_minimal() + 
+  coord_flip() +
+  ylab('Average Aroma Score') +
+  xlab('Styles') +
+  ggtitle('Popular Beer Styles based on Aroma Score')
+```
+
+
+
+
+**Top beer styles based on taste score**
+
+Let's take a look at the top styles based on their taste score.  
+
+```{r}
+beer_df %>% 
+  group_by(style) %>% # Group by the beer style
+  summarise(avg=mean(review_taste)) %>% # Count per group
+  filter(avg > 4) %>% # Only the larger groups
+  ggplot(aes(reorder(style, avg), avg)) + # Reorder the bars
+  geom_col(fill = '#B6CDE5') + 
+  theme_minimal() + 
+  coord_flip() +
+  ylab('Average Taste Score') +
+  xlab('Styles') +
+  ggtitle('Popular Beer Styles based on Taste Score')
+```
+
+
+
+
+**Top beer styles based on palate score**
+
+Let's take a look at the top styles based on their palate score.  
+
+```{r}
+beer_df %>% 
+  group_by(style) %>% # Group by the beer style
+  summarise(avg=mean(review_palate)) %>% # Count per group
+  filter(avg > 4) %>% # Only the larger groups
+  ggplot(aes(reorder(style, avg), avg)) + # Reorder the bars
+  geom_col(fill = '#B6CDE5') + 
+  theme_minimal() + 
+  coord_flip() +
+  ylab('Average Palate Score') +
+  xlab('Styles') +
+  ggtitle('Popular Beer Styles based on Palate Score')
+```
+
+
+
+
+**Top beer styles based on overall score**
+
+Let's take a look at the top styles based on their overall score.  
+
+```{r}
+beer_df %>% 
+  group_by(style) %>% # Group by the beer style
+  summarise(avg=mean(review_overall)) %>% # Count per group
+  filter(avg > 4) %>% # Only the larger groups
+  ggplot(aes(reorder(style, avg), avg)) + # Reorder the bars
+  geom_col(fill = '#B6CDE5') + 
+  theme_minimal() + 
+  coord_flip() +
+  ylab('Average Overall Score') +
+  xlab('Styles') +
+  ggtitle('Popular Beer Styles based on Overall Score')
+```
+
+
+
+
+
+**Brewery density across states in the United States**
+
+Let us take a look at the number of breweries in United States accross variou states. We see this
+plotted on the United States map.
+
+```{r, echo=FALSE}
+stateFromLower <-function(x) {
+  #read 52 state codes into local variable [includes DC (Washington D.C. and PR (Puerto Rico)]
+  st.codes<-data.frame(
+    state=as.factor(c("AK", "AL", "AR", "AZ", "CA", "CO", "CT", "DC", "DE", "FL", "GA",
+                      "HI", "IA", "ID", "IL", "IN", "KS", "KY", "LA", "MA", "MD", "ME",
+                      "MI", "MN", "MO", "MS",  "MT", "NC", "ND", "NE", "NH", "NJ", "NM",
+                      "NV", "NY", "OH", "OK", "OR", "PA", "PR", "RI", "SC", "SD", "TN",
+                      "TX", "UT", "VA", "VT", "WA", "WI", "WV", "WY")),
+    full=as.factor(c("alaska","alabama","arkansas","arizona","california","colorado",
+                     "connecticut","district of columbia","delaware","florida","georgia",
+                     "hawaii","iowa","idaho","illinois","indiana","kansas","kentucky",
+                     "louisiana","massachusetts","maryland","maine","michigan","minnesota",
+                     "missouri","mississippi","montana","north carolina","north dakota",
+                     "nebraska","new hampshire","new jersey","new mexico","nevada",
+                     "new york","ohio","oklahoma","oregon","pennsylvania","puerto rico",
+                     "rhode island","south carolina","south dakota","tennessee","texas",
+                     "utah","virginia","vermont","washington","wisconsin",
+                     "west virginia","wyoming"))
+  )
+  #create an nx1 data.frame of state codes from source column
+  st.x<-data.frame(state=x)
+  #match source codes with codes from 'st.codes' local variable and use to return the full state name
+  refac.x<-st.codes$full[match(st.x$state,st.codes$state)]
+  #return the full state names in the same order in which they appeared in the original source
+  return(refac.x)
+}
+
+beer_df$state<-gsub("[[:space:]]", "", beer_df$state)
+beer_df$region<-stateFromLower(beer_df$state)
+```
+
+```{r, warning=FALSE}
+brewery_density <- beer_df %>% group_by(region) %>% count(brewery_name) %>% summarise(value = n())
+brewery_density[is.na(brewery_density)] <- 0
+names(brewery_density) = c("region", "value")
+plot_brewery_density <- state_choropleth(brewery_density, title  = "Breweries across United States", legend = "Count")
+require(gridExtra)
+grid.arrange(plot_brewery_density, ncol=1)
+```
+
+From the above map we see that there are higher number of breweries in California, Arizona, Florida, etc.
+Where as the number of breweries in central america are very low.
+
+
+
+
+**Average alcohol strength of beer by state**
+
+Next, we take a look at the strength of beers accross states.
+
+```{r, warning=FALSE}
+df <- beer_df %>% group_by(region) %>% summarise(avg = mean(abv))
+df[is.na(df)] <- 0
+names(df) = c("region", "value")
+plot_df <- state_choropleth(df, title  = "Beer strength across United States", legend = "Average ABV.")
+require(gridExtra)
+grid.arrange(plot_df, ncol=1)
+```
+
+From this map we see that the alcohol content in the beer are higher in middle states of the US. Where as
+from the previous map we saw that the count of breweries were low in that region. 
+
+
+
+
+**Average beer overall review of beer by state**
+
+Next, we take a look at the over all review scores of beers accross states.
+
+```{r, warning=FALSE}
+df <- beer_df %>% group_by(region) %>% summarise(avg = mean(review_overall))
+df[is.na(df)] <- 0
+names(df) = c("region", "value")
+plot_df <- state_choropleth(df, title  = "Beer average Overall Score", legend = "Average Overall Score")
+require(gridExtra)
+grid.arrange(plot_df, ncol=1)
+```
+
+From the above map we observe that the states where there are more number of breweries have higher 
+overall score for the beer. But we also see that the states with higher average abv for a beer 
+also have a higher average overall score.
+
+
+
+
+**Number of styles per state**
+
+Finally we take a look at the number of different beer styles produced based on state in the US.
+
+```{r, warning=FALSE}
+df <- beer_df
+df$style <- as.character(df$style)
+df <- within(df, {no.styles<-ave(style,region,FUN=function(x) length(unique(x)))})
+df <- subset(df, select=c("region","no.styles"))
+df <- unique(df)
+df$no.styles <- as.numeric(paste(df$no.styles))
+df[is.na(df)] <- 0
+names(df) = c("region", "value")
+plot_df <- state_choropleth(df, title  = "Count of beer styles per state", legend = "Count")
+require(gridExtra)
+grid.arrange(plot_df, ncol=1)
+```
+
+And we find that CA, CO, PA, NY, MI, MT, TX have a higher count of beer styles. 
+
+
+
+
+**Number of styles per city**
+
+And at last, we take a look at the cities with the most number of beer styles.
+
+```{r, warning=FALSE}
+cities_count <- beer_df %>% 
+  group_by(city) %>% # Group by city
+  summarise(n_breweries = n()) %>% # Count per city
+  arrange(desc(n_breweries)) %>% # Sort by count descending
+  top_n(20) # Return the top 20 rows
+
+# Calculate mean average number of breweries
+avg_breweries_city <- beer_df %>%
+  group_by(city) %>% 
+  summarise(n = n()) %>% 
+  summarise(mean = mean(n)) %>%
+  `$`(mean)
+
+ggplot(data = cities_count, aes(x = reorder(city, -n_breweries), y = n_breweries)) +
+  geom_col( fill = '#03A678') + 
+  geom_hline(yintercept = avg_breweries_city, color = '#FFA400', size = 1) + # add horizontal line for average number
+  theme_minimal() + 
+  labs(x = "City", y = "Number of breweries", title = "Number of craft beer breweries by City") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) # rotate the axis text
+```
+
+
+
+
+
+## Conclusion
+
+In this analysis, we took a deep dive into our beer data set and found some intresting insights.
+We got to explore various top beers based on their different characteristics review scores, we 
+got to know which berwery produced it and in in which location. We got to know where are the top 
+rated breweries located. We got to see locations of various styles of beer, beer abv and 
+beer overall score on the map of United States.
+
+All this insights can be used by the buisness user as well as by an ordinary beer drinker. To seek
+different styles of beer based on different criteria. They got to know which states to look
+for a particular type of brew and also how much alcohol content they can expect in their beer 
+based on the state they got the beer from.
+
+
+
+
+## Resource
+
+You will find the data set and the .Rmd file for this project on my github repo ([link](https://github.com/AayushMandhyan/Data-Wrangling-Beer-Dataset)).
+
+
+
+
+## References
+
+- Professor Jason Klusowski's notes and class assignments.
+- https://monashbioinformaticsplatform.github.io/2017-11-16-open-science-training/topics/rmarkdown.html
+- https://www.kaggle.com/nickhould/craft-cans
+- https://r4ds.had.co.nz/index.html
+
+
+
+
+## Acknowledgement
+
+I would like to thank Professor Jason Klusowski for his efforts he puts into the class as well as his guidance
+in learning R by doing hand-on assignments and also in incorporating those learning into this final project. 
+
